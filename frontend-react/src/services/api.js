@@ -6,7 +6,10 @@ const ASSET_BASE_URL = import.meta.env.VITE_ASSET_BASE_URL || "";
 
 const getOriginFromApiBase = () => {
   try {
-    if (API_BASE_URL.startsWith("http://") || API_BASE_URL.startsWith("https://")) {
+    if (
+      API_BASE_URL.startsWith("http://") ||
+      API_BASE_URL.startsWith("https://")
+    ) {
       return new URL(API_BASE_URL).origin;
     }
   } catch {
@@ -17,7 +20,11 @@ const getOriginFromApiBase = () => {
 
 const normalizeAssetUrl = (url) => {
   if (!url) return url;
-  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
+  if (
+    url.startsWith("http://") ||
+    url.startsWith("https://") ||
+    url.startsWith("data:")
+  ) {
     return url;
   }
 
