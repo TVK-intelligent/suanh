@@ -78,6 +78,61 @@ npm run dev
 
 Frontend sẽ chạy tại: http://localhost:5173
 
+## 🌍 Deploy để ai cũng truy cập được
+
+### Mô hình khuyến nghị
+
+- **Backend (Spring Boot):** Render Web Service
+- **Frontend (React):** Vercel
+- **Database:** MySQL cloud (Aiven/PlanetScale/Railway MySQL)
+
+### 1) Deploy Backend lên Render
+
+1. Vào Render → **New +** → **Web Service** → chọn repo GitHub.
+2. Root directory: `backend-spring`
+3. Build command: `mvn clean package -DskipTests`
+4. Start command: `java -jar target/*.jar`
+5. Thêm Environment Variables:
+	- `PORT=10000` (hoặc để Render tự set)
+	- `SPRING_DATASOURCE_URL=jdbc:mysql://...`
+	- `SPRING_DATASOURCE_USERNAME=...`
+	- `SPRING_DATASOURCE_PASSWORD=...`
+	- `GEMINI_API_KEY=...`
+	- `APP_CORS_ALLOWED_ORIGINS=https://<ten-frontend>.vercel.app`
+
+Sau khi deploy xong, bạn sẽ có URL backend dạng:
+
+`https://your-backend.onrender.com`
+
+### 2) Deploy Frontend lên Vercel
+
+1. Vào Vercel → **Add New Project** → chọn repo GitHub.
+2. Root directory: `frontend-react`
+3. Framework preset: `Vite`
+4. Thêm Environment Variables:
+	- `VITE_API_BASE_URL=https://your-backend.onrender.com/api/images`
+	- `VITE_ASSET_BASE_URL=https://your-backend.onrender.com`
+5. Deploy.
+
+Sau khi xong, mọi người có thể truy cập qua URL Vercel.
+
+### 3) Cập nhật CORS backend
+
+Khi đã có domain frontend chính thức, cập nhật lại:
+
+- `APP_CORS_ALLOWED_ORIGINS=https://<ten-frontend>.vercel.app`
+
+Rồi redeploy backend.
+
+### 4) Biến môi trường mẫu
+
+- Backend: `backend-spring/.env.example`
+- Frontend: `frontend-react/.env.example`
+
+## 🔐 Security Note
+
+Bạn đã từng commit API key vào mã nguồn. Hãy **rotate (đổi) GEMINI_API_KEY ngay** trên Google AI Studio và chỉ dùng key qua biến môi trường.
+
 ## 🎯 API Endpoints
 
 | Method   | Endpoint                          | Mô tả                                       |

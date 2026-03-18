@@ -1,7 +1,41 @@
 import axios from "axios";
 
 // Base URL for API calls
-const API_BASE_URL = "/api/images";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/images";
+const ASSET_BASE_URL = import.meta.env.VITE_ASSET_BASE_URL || "";
+
+const getOriginFromApiBase = () => {
+  try {
+    if (API_BASE_URL.startsWith("http://") || API_BASE_URL.startsWith("https://")) {
+      return new URL(API_BASE_URL).origin;
+    }
+  } catch {
+    // no-op
+  }
+  return "";
+};
+
+const normalizeAssetUrl = (url) => {
+  if (!url) return url;
+  if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("data:")) {
+    return url;
+  }
+
+  const base = (ASSET_BASE_URL || getOriginFromApiBase()).replace(/\/$/, "");
+  if (!base) return url;
+
+  return `${base}/${url.replace(/^\//, "")}`;
+};
+
+const normalizeImagePayload = (payload) => {
+  if (!payload || typeof payload !== "object") return payload;
+
+  return {
+    ...payload,
+    originalUrl: normalizeAssetUrl(payload.originalUrl),
+    processedUrl: normalizeAssetUrl(payload.processedUrl),
+  };
+};
 
 /**
  * API Service cho Image Processing
@@ -25,7 +59,7 @@ const api = {
       },
     });
 
-    return response.data;
+    return normalizeImagePayload(response.data);
   },
 
   /**
@@ -52,7 +86,7 @@ const api = {
       },
     );
 
-    return response.data;
+    return normalizeImagePayload(response.data);
   },
 
   /**
@@ -73,7 +107,7 @@ const api = {
       },
     });
 
-    return response.data;
+    return normalizeImagePayload(response.data);
   },
 
   /**
@@ -81,7 +115,7 @@ const api = {
    */
   getImage: async (id) => {
     const response = await axios.get(`${API_BASE_URL}/${id}`);
-    return response.data;
+    return normalizeImagePayload(response.data);
   },
 
   /**
@@ -93,7 +127,10 @@ const api = {
       params.keyword = keyword.trim();
     }
     const response = await axios.get(`${API_BASE_URL}/history`, { params });
-    return response.data;
+    return {
+      ...response.data,
+      images: (response.data?.images || []).map(normalizeImagePayload),
+    };
   },
 
   /**
