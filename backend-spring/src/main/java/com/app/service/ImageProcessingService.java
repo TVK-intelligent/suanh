@@ -23,7 +23,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -37,6 +39,7 @@ public class ImageProcessingService {
     private static final Logger logger = LoggerFactory.getLogger(ImageProcessingService.class);
 
     private final DenoiseService denoiseService;
+    private final YoloDetectionService yoloDetectionService;
     private final GeminiVisionService geminiVisionService;
     private final ImageTaskRepository imageTaskRepository;
     private final ObjectMapper objectMapper;
@@ -48,10 +51,12 @@ public class ImageProcessingService {
     private String processedDir;
 
     public ImageProcessingService(DenoiseService denoiseService,
+            YoloDetectionService yoloDetectionService,
             GeminiVisionService geminiVisionService,
             ImageTaskRepository imageTaskRepository,
             ObjectMapper objectMapper) {
         this.denoiseService = denoiseService;
+        this.yoloDetectionService = yoloDetectionService;
         this.geminiVisionService = geminiVisionService;
         this.imageTaskRepository = imageTaskRepository;
         this.objectMapper = objectMapper;
@@ -97,7 +102,7 @@ public class ImageProcessingService {
             String originalFilename = file.getOriginalFilename();
             String uniqueFilename = generateUniqueFilename(originalFilename);
             Path originalPath = Paths.get(originalDir, uniqueFilename);
-            Files.write(originalPath, file.getBytes());
+            Files.write(originalPath, fileBytes);
 
             logger.info("Đã lưu file gốc: {}", originalPath);
 
@@ -107,14 +112,14 @@ public class ImageProcessingService {
             task.setFileSize(file.getSize());
 
             // Lấy kích thước ảnh
-            int[] dimensions = ImageUtils.getImageDimensions(file.getBytes());
+            int[] dimensions = ImageUtils.getImageDimensions(fileBytes);
             task.setImageWidth(dimensions[0]);
             task.setImageHeight(dimensions[1]);
 
             task = imageTaskRepository.save(task);
 
             // 4. Khử nhiễu ảnh
-            byte[] processedImageData = denoiseService.denoiseImage(file.getBytes());
+            byte[] processedImageData = denoiseService.denoiseImage(fileBytes);
 
             // 5. Lưu ảnh đã xử lý
             String processedFilename = "processed_" + uniqueFilename;
@@ -123,13 +128,16 @@ public class ImageProcessingService {
 
             logger.info("Đã lưu ảnh đã xử lý: {}", processedPath);
 
-            // 6. Phân tích ảnh bằng Gemini Vision (nhận diện + mô tả)
-            GeminiVisionService.ImageAnalysisResult analysisResult = geminiVisionService.analyzeImage(file.getBytes());
+            // 6. Nhận diện bằng YOLO (local)
+            List<String> yoloLabels = yoloDetectionService.detectObjects(fileBytes);
 
-            List<String> labels = analysisResult.getDetectedObjects();
+            // 7. Phân tích ảnh bằng Gemini Vision (mô tả + bổ sung nhãn)
+            GeminiVisionService.ImageAnalysisResult analysisResult = geminiVisionService.analyzeImage(fileBytes);
+
+            List<String> labels = mergeLabels(yoloLabels, analysisResult.getDetectedObjects());
             String imageCaption = analysisResult.getDescription();
 
-            // 7. Cập nhật task
+            // 8. Cập nhật task
             task.setProcessedPath(processedPath.toString());
             task.setDetectedObjects(objectMapper.writeValueAsString(labels));
             task.setImageCaption(imageCaption);
@@ -140,7 +148,7 @@ public class ImageProcessingService {
 
             logger.info("✓ Hoàn thành xử lý ảnh ID={} trong {}ms", task.getId(), task.getProcessingTimeMs());
 
-            // 8. Tạo response
+            // 9. Tạo response
             ImageUploadResponse response = ImageUploadResponse.success(
                     task.getId(),
                     originalFilename,
@@ -281,9 +289,12 @@ public class ImageProcessingService {
             task.setImageHeight(dimensions[1]);
             task = imageTaskRepository.save(task);
 
-            // Chỉ nhận diện bằng Gemini Vision
+            // Nhận diện YOLO (local)
+            List<String> yoloLabels = yoloDetectionService.detectObjects(fileBytes);
+
+            // Gemini dùng để mô tả + bổ sung nhãn
             GeminiVisionService.ImageAnalysisResult analysisResult = geminiVisionService.analyzeImage(fileBytes);
-            List<String> labels = analysisResult.getDetectedObjects();
+            List<String> labels = mergeLabels(yoloLabels, analysisResult.getDetectedObjects());
             String imageCaption = analysisResult.getDescription();
 
             task.setDetectedObjects(objectMapper.writeValueAsString(labels));
@@ -589,5 +600,23 @@ public class ImageProcessingService {
         } catch (IOException e) {
             logger.warn("Không thể xóa file của task {}: {}", task.getId(), e.getMessage());
         }
+    }
+
+    /**
+     * Gộp nhãn từ nhiều nguồn, loại bỏ trùng lặp và giữ thứ tự.
+     */
+    private List<String> mergeLabels(List<String>... labelGroups) {
+        Set<String> merged = new LinkedHashSet<>();
+        for (List<String> group : labelGroups) {
+            if (group == null) {
+                continue;
+            }
+            for (String label : group) {
+                if (label != null && !label.isBlank()) {
+                    merged.add(label.trim());
+                }
+            }
+        }
+        return new java.util.ArrayList<>(merged);
     }
 }
