@@ -84,22 +84,28 @@ public class ImageController {
     }
 
     /**
-     * Chỉ nhận diện đối tượng bằng Gemini Vision
-     * POST /api/images/detect
+     * Nhận diện đối tượng bằng Gemini Vision hoặc YOLO
+     * POST /api/images/detect?mode=gemini|yolo
      */
     @PostMapping("/detect")
     public ResponseEntity<ImageUploadResponse> detectImage(
-            @RequestParam(value = "file", required = false) MultipartFile file) {
+            @RequestParam(value = "file", required = false) MultipartFile file,
+            @RequestParam(value = "mode", required = false, defaultValue = "gemini") String mode) {
 
         if (file == null || file.isEmpty()) {
             return ResponseEntity.badRequest()
                     .body(ImageUploadResponse.error("Vui lòng chọn file ảnh để tải lên"));
         }
 
-        logger.info("Nhận request nhận diện ảnh: {} ({}KB)",
-                file.getOriginalFilename(), file.getSize() / 1024);
+        logger.info("Nhận request nhận diện ảnh: {} ({}KB), mode={}",
+                file.getOriginalFilename(), file.getSize() / 1024, mode);
 
-        ImageUploadResponse response = imageProcessingService.detectOnly(file);
+        ImageUploadResponse response;
+        if ("yolo".equalsIgnoreCase(mode)) {
+            response = imageProcessingService.detectWithYolo(file);
+        } else {
+            response = imageProcessingService.detectOnly(file);
+        }
         return ResponseEntity.ok(response);
     }
 
@@ -162,6 +168,22 @@ public class ImageController {
         Map<String, Object> health = new HashMap<>();
         health.put("status", "UP");
         health.put("service", "AI Image Processor");
+        health.put("timestamp", java.time.LocalDateTime.now().toString());
+
+        return ResponseEntity.ok(health);
+    }
+
+    /**
+     * YOLO Model Health Check
+     * GET /api/images/yolo-health
+     */
+    @GetMapping("/yolo-health")
+    public ResponseEntity<Map<String, Object>> yoloHealthCheck() {
+        Map<String, Object> health = new HashMap<>();
+        boolean yoloLoaded = imageProcessingService.isYoloModelLoaded();
+        health.put("status", yoloLoaded ? "UP" : "DOWN");
+        health.put("service", "YOLO v5 Detection");
+        health.put("modelLoaded", yoloLoaded);
         health.put("timestamp", java.time.LocalDateTime.now().toString());
 
         return ResponseEntity.ok(health);

@@ -134,18 +134,12 @@ public class GeminiVisionService {
     @SuppressWarnings("unchecked")
     private ImageAnalysisResult parseJsonResponse(String jsonText) {
         try {
-            // Loại bỏ markdown code block nếu có
             jsonText = jsonText.trim();
-            if (jsonText.startsWith("```json")) {
-                jsonText = jsonText.substring(7);
+            int startIndex = jsonText.indexOf('{');
+            int endIndex = jsonText.lastIndexOf('}');
+            if (startIndex >= 0 && endIndex > startIndex) {
+                jsonText = jsonText.substring(startIndex, endIndex + 1);
             }
-            if (jsonText.startsWith("```")) {
-                jsonText = jsonText.substring(3);
-            }
-            if (jsonText.endsWith("```")) {
-                jsonText = jsonText.substring(0, jsonText.length() - 3);
-            }
-            jsonText = jsonText.trim();
 
             // Parse JSON đơn giản
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();

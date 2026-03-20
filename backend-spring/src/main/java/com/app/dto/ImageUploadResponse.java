@@ -14,6 +14,7 @@ public class ImageUploadResponse {
     private String originalUrl;
     private String processedUrl;
     private List<String> detectedObjects;
+    private List<String> yoloLabels; // Nhãn từ YOLO detection
     private ProcessingStatus status;
     private Integer processingTimeMs;
     private Integer imageWidth;
@@ -157,6 +158,14 @@ public class ImageUploadResponse {
 
     public void setImageCaption(String imageCaption) {
         this.imageCaption = imageCaption;
+    }
+
+    public List<String> getYoloLabels() {
+        return yoloLabels;
+    }
+
+    public void setYoloLabels(List<String> yoloLabels) {
+        this.yoloLabels = yoloLabels;
     }
 
     public Double getPsnr() {

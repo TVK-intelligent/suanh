@@ -28,6 +28,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 /**
  * Service chính xử lý ảnh
@@ -159,6 +160,7 @@ public class ImageProcessingService {
                     task.getImageWidth(),
                     task.getImageHeight());
             response.setImageCaption(imageCaption);
+            response.setYoloLabels(yoloLabels);
             return response;
 
         } catch (Exception e) {
@@ -311,10 +313,93 @@ public class ImageProcessingService {
                     null, labels, task.getProcessingTimeMs(),
                     task.getImageWidth(), task.getImageHeight());
             response.setImageCaption(imageCaption);
+            response.setYoloLabels(yoloLabels);
             return response;
 
         } catch (Exception e) {
             logger.error("Lỗi nhận diện ảnh: {}", e.getMessage(), e);
+            if (task != null) {
+                task.setProcessingStatus(ProcessingStatus.FAILED);
+                task.setErrorMessage(e.getMessage());
+                imageTaskRepository.save(task);
+            }
+            return ImageUploadResponse.error(e.getMessage());
+        }
+    }
+
+    /**
+     * Nhận diện đối tượng bằng YOLO v5 (không dùng Gemini)
+     */
+    public ImageUploadResponse detectWithYolo(MultipartFile file) {
+        long startTime = System.currentTimeMillis();
+        ImageTask task = null;
+
+        try {
+            if (file == null || file.isEmpty()) {
+                return ImageUploadResponse.error("Không nhận được file. Vui lòng thử lại.");
+            }
+
+            byte[] fileBytes = file.getBytes();
+            if (fileBytes == null || fileBytes.length == 0) {
+                return ImageUploadResponse.error("File rỗng hoặc không đọc được.");
+            }
+
+            validateFile(file);
+
+            String originalFilename = file.getOriginalFilename();
+            String uniqueFilename = generateUniqueFilename(originalFilename);
+            Path originalPath = Paths.get(originalDir, uniqueFilename);
+            Files.write(originalPath, fileBytes);
+
+            task = new ImageTask(originalFilename, originalPath.toString());
+            task.setProcessingStatus(ProcessingStatus.PROCESSING);
+            task.setFileSize(file.getSize());
+
+            int[] dimensions = ImageUtils.getImageDimensions(fileBytes);
+            task.setImageWidth(dimensions[0]);
+            task.setImageHeight(dimensions[1]);
+            task = imageTaskRepository.save(task);
+
+            logger.info("🤖 Starting YOLO detection for image: {}x{}", dimensions[0], dimensions[1]);
+
+            // Nhận diện chỉ bằng YOLO (local)
+            List<String> yoloLabels = yoloDetectionService.detectObjects(fileBytes);
+            
+            logger.info("✅ YOLO detection completed. Detected {} object(s): {}", yoloLabels.size(), yoloLabels);
+
+            task.setDetectedObjects(objectMapper.writeValueAsString(yoloLabels));
+
+            // Tạo đoạn văn miêu tả chi tiết từ YOLO
+            String caption;
+            if (yoloLabels.isEmpty()) {
+                caption = "Hệ thống AI (YOLO v5) đã xử lý xong nhưng không nhận diện được đối tượng nào rõ ràng trong bức ảnh này.";
+            } else {
+                Map<String, Long> counts = yoloLabels.stream()
+                        .collect(Collectors.groupingBy(e -> e, Collectors.counting()));
+                String objectsStr = counts.entrySet().stream()
+                        .map(e -> e.getValue() + " " + e.getKey())
+                        .collect(Collectors.joining(", "));
+                caption = "Hệ thống AI (YOLO v5) đã phân tích bức ảnh và phát hiện thành công " + yoloLabels.size() + " đối tượng, bao gồm: " + objectsStr + ".";
+            }
+
+            task.setImageCaption(caption);
+            task.setProcessingStatus(ProcessingStatus.COMPLETED);
+            task.setProcessingTimeMs((int) (System.currentTimeMillis() - startTime));
+            task = imageTaskRepository.save(task);
+
+            logger.info("✓ Hoàn thành YOLO detection ảnh ID={} trong {}ms", task.getId(), task.getProcessingTimeMs());
+
+            ImageUploadResponse response = ImageUploadResponse.success(
+                    task.getId(), originalFilename,
+                    "/uploads/original/" + uniqueFilename,
+                    null, yoloLabels, task.getProcessingTimeMs(),
+                    task.getImageWidth(), task.getImageHeight());
+            response.setImageCaption(caption);
+            response.setYoloLabels(yoloLabels);
+            return response;
+
+        } catch (Exception e) {
+            logger.error("Lỗi YOLO detection: {}", e.getMessage(), e);
             if (task != null) {
                 task.setProcessingStatus(ProcessingStatus.FAILED);
                 task.setErrorMessage(e.getMessage());
@@ -361,6 +446,13 @@ public class ImageProcessingService {
         stats.put("totalFileSizeMB", Math.round(totalFileSize / (1024.0 * 1024) * 100) / 100.0);
 
         return stats;
+    }
+
+    /**
+     * Check if YOLO model is loaded
+     */
+    public boolean isYoloModelLoaded() {
+        return yoloDetectionService.isModelLoaded();
     }
 
     /**
@@ -465,28 +557,52 @@ public class ImageProcessingService {
         }
 
         String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
-            throw new IllegalArgumentException("Chỉ chấp nhận file ảnh (JPEG, PNG, etc.)");
-        }
+        String filename = file.getOriginalFilename();
+        
+        logger.info("File validation - name: {}, contentType: {}, size: {}bytes", 
+            filename, contentType, file.getSize());
 
-        // Kiểm tra định dạng hỗ trợ
-        String[] supportedTypes = { "image/jpeg", "image/png", "image/webp", "image/bmp" };
-        boolean supported = false;
-        for (String type : supportedTypes) {
-            if (type.equals(contentType)) {
-                supported = true;
-                break;
+        // Kiểm tra filename extension (more reliable than content type)
+        if (filename != null) {
+            String lowerFilename = filename.toLowerCase();
+            if (lowerFilename.endsWith(".jpg") || lowerFilename.endsWith(".jpeg") || 
+                lowerFilename.endsWith(".png") || lowerFilename.endsWith(".webp") || 
+                lowerFilename.endsWith(".bmp")) {
+                logger.info("✅ File extension valid");
+                // Content type check
+                if (contentType == null || !contentType.startsWith("image/")) {
+                    logger.warn("⚠️ Content type missing/invalid, but filename OK: {}", contentType);
+                    // Allow anyway if filename looks good
+                } else {
+                    // Kiểm tra định dạng hỗ trợ (nếu content type ada)
+                    String[] supportedTypes = { "image/jpeg", "image/png", "image/webp", "image/bmp" };
+                    boolean supported = false;
+                    for (String type : supportedTypes) {
+                        if (type.equals(contentType)) {
+                            supported = true;
+                            break;
+                        }
+                    }
+                    if (!supported) {
+                        logger.warn("❌ Content type not in supported list: {}", contentType);
+                        throw new IllegalArgumentException("Định dạng không hỗ trợ. Hỗ trợ: JPEG, PNG, WebP, BMP");
+                    }
+                }
+                
+                // Kiểm tra kích thước
+                if (file.getSize() > 50 * 1024 * 1024) {
+                    throw new IllegalArgumentException("File quá lớn. Tối đa 50MB");
+                }
+                return;
             }
         }
 
-        if (!supported) {
-            throw new IllegalArgumentException("Định dạng không hỗ trợ. Hỗ trợ: JPEG, PNG, WebP, BMP");
+        // Nếu không match filename, check content type
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new IllegalArgumentException("Chỉ chấp nhận file ảnh (JPEG, PNG, WebP, BMP)");
         }
 
-        // Kiểm tra kích thước (max 50MB đã cấu hình trong properties)
-        if (file.getSize() > 50 * 1024 * 1024) {
-            throw new IllegalArgumentException("File quá lớn. Tối đa 50MB");
-        }
+        throw new IllegalArgumentException("Định dạng không hỗ trợ. Hỗ trợ: JPEG, PNG, WebP, BMP. File: " + filename);
     }
 
     /**

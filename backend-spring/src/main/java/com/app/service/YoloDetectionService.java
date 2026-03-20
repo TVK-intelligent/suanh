@@ -108,6 +108,8 @@ public class YoloDetectionService {
      */
     public List<String> detectObjects(byte[] imageData) {
         if (!enabled || !modelLoaded || imageData == null || imageData.length == 0) {
+            logger.warn("YOLO detection skipped: enabled={}, modelLoaded={}, imageDataLength={}", 
+                enabled, modelLoaded, imageData != null ? imageData.length : 0);
             return Collections.emptyList();
         }
 
@@ -119,11 +121,13 @@ public class YoloDetectionService {
         try {
             image = Imgcodecs.imdecode(new MatOfByte(imageData), Imgcodecs.IMREAD_COLOR);
             if (image.empty()) {
+                logger.warn("Failed to decode image from bytes");
                 return Collections.emptyList();
             }
 
             int originalWidth = image.cols();
             int originalHeight = image.rows();
+            logger.info("Image decoded: {}x{}", originalWidth, originalHeight);
 
             blob = Dnn.blobFromImage(
                     image,
@@ -135,6 +139,7 @@ public class YoloDetectionService {
 
             net.setInput(blob);
             output = net.forward();
+            logger.info("YOLO forward pass completed. Output shape: {}x{}", output.rows(), output.cols());
 
             int attributes = 85; // x,y,w,h,obj + 80 classes
             int rows;
@@ -146,33 +151,47 @@ public class YoloDetectionService {
                 detections = output.reshape(1, rows);
             }
 
+            logger.info("Processing {} detection rows with threshold={}", rows, confidenceThreshold);
+
             List<Rect2d> boxes = new ArrayList<>();
             List<Float> confidences = new ArrayList<>();
             List<Integer> classIds = new ArrayList<>();
 
             double scaleX = originalWidth / 640.0;
             double scaleY = originalHeight / 640.0;
+            
+            // Track max scores for debugging
+            float maxObjectness = 0;
+            float maxConfidence = 0;
 
             for (int i = 0; i < rows; i++) {
-                double[] rowData = new double[attributes];
+                float[] rowData = new float[attributes];
                 detections.get(i, 0, rowData);
 
-                float objectness = (float) rowData[4];
-                if (objectness < 0.25f) {
-                    continue;
-                }
-
+                float objectness = rowData[4];
+                maxObjectness = Math.max(maxObjectness, objectness);
+                
+                // Find best class
                 int bestClassId = -1;
                 float bestClassScore = 0f;
                 for (int c = 5; c < attributes; c++) {
-                    float score = (float) rowData[c];
+                    float score = rowData[c];
                     if (score > bestClassScore) {
                         bestClassScore = score;
                         bestClassId = c - 5;
                     }
                 }
 
+                // Combined confidence = objectness * class score
                 float confidence = objectness * bestClassScore;
+                maxConfidence = Math.max(maxConfidence, confidence);
+                
+                // Log top detections for debugging
+                if (i < 5) {
+                    logger.info("Row {}: obj={}, best_class_id={}, class_score={}, confidence={}", i, String.format("%.4f", objectness), bestClassId, String.format("%.4f", bestClassScore), String.format("%.4f", confidence));
+                }
+                
+                // Single confidence threshold check
                 if (confidence < confidenceThreshold || bestClassId < 0) {
                     continue;
                 }
@@ -188,9 +207,15 @@ public class YoloDetectionService {
                 boxes.add(new Rect2d(left, top, Math.max(1, width), Math.max(1, height)));
                 confidences.add(confidence);
                 classIds.add(bestClassId);
+                logger.info("✓ Detection added - class {} ({}): confidence {}", bestClassId, COCO_LABELS[bestClassId], String.format("%.4f", confidence));
             }
+            
+            logger.info("Max scores - objectness: {}, confidence: {}", String.format("%.4f", maxObjectness), String.format("%.4f", maxConfidence));
+
+            logger.info("Found {} detections before NMS", boxes.size());
 
             if (boxes.isEmpty()) {
+                logger.warn("No objects detected by YOLO");
                 return Collections.emptyList();
             }
 
@@ -204,18 +229,22 @@ public class YoloDetectionService {
 
             Set<String> labels = new LinkedHashSet<>();
             int[] keep = indices.toArray();
+            logger.info("After NMS: {} detections kept", keep.length);
+            
             for (int idx : keep) {
                 if (idx >= 0 && idx < classIds.size()) {
                     int classId = classIds.get(idx);
                     if (classId >= 0 && classId < COCO_LABELS.length) {
                         labels.add(COCO_LABELS[classId]);
+                        logger.debug("Detected: {} (confidence: {})", COCO_LABELS[classId], confidences.get(idx));
                     }
                 }
             }
 
+            logger.info("✓ YOLO detection result: {}", labels);
             return new ArrayList<>(labels);
         } catch (Exception e) {
-            logger.warn("YOLO detection failed: {}", e.getMessage());
+            logger.error("YOLO detection failed: {}", e.getMessage(), e);
             return Collections.emptyList();
         } finally {
             image.release();

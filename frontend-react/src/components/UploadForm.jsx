@@ -5,13 +5,13 @@ import { useState, useRef } from "react";
  * Hiển thị text khác nhau tùy theo mode (denoise/detect/full)
  * Hỗ trợ tuỳ chỉnh cường độ khử nhiễu
  */
-function UploadForm({ onUpload, isLoading, mode }) {
+function UploadForm({ onUpload, isLoading, mode, compact = false }) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [denoiseStrength, setDenoiseStrength] = useState(10);
   const fileInputRef = useRef(null);
 
   const isDenoise = mode === "denoise";
-  const isDetect = mode === "detect";
+  const isDetect = mode === "detect" || !mode;
   const isFull = mode === "full";
 
   const handleDragOver = (e) => {
@@ -103,11 +103,13 @@ function UploadForm({ onUpload, isLoading, mode }) {
   };
 
   return (
-    <div className="card fade-in">
-      <h3 className="card-title">
-        <span>{getIcon()}</span>
-        {getTitle()}
-      </h3>
+    <div className="card fade-in" style={compact ? { all: "unset" } : {}}>
+      {!compact && (
+        <h3 className="card-title">
+          <span>{getIcon()}</span>
+          {getTitle()}
+        </h3>
+      )}
 
       <div
         className={`upload-zone ${isDragOver ? "drag-over" : ""}`}
@@ -117,13 +119,26 @@ function UploadForm({ onUpload, isLoading, mode }) {
         onClick={handleClick}
         role="button"
         tabIndex={0}
+        style={
+          compact
+            ? {
+                border: "2px dashed rgba(59, 130, 246, 0.3)",
+                borderRadius: "12px",
+                padding: "60px 40px",
+                cursor: "pointer",
+                transition: "all 200ms ease",
+              }
+            : {}
+        }
       >
         <span className="upload-icon">{getUploadIcon()}</span>
         <p className="upload-text">{getUploadText()}</p>
-        <p className="upload-hint">{getHintText()}</p>
-        <p className="upload-hint" style={{ marginTop: "0.25rem" }}>
-          Hỗ trợ: JPEG, PNG, WebP, BMP • Tối đa 50MB
-        </p>
+        {!compact && <p className="upload-hint">{getHintText()}</p>}
+        {!compact && (
+          <p className="upload-hint" style={{ marginTop: "0.25rem" }}>
+            Hỗ trợ: JPEG, PNG, WebP, BMP • Tối đa 50MB
+          </p>
+        )}
 
         <input
           ref={fileInputRef}
@@ -135,7 +150,7 @@ function UploadForm({ onUpload, isLoading, mode }) {
       </div>
 
       {/* Denoise Strength Slider - chỉ hiển thị cho mode denoise và full */}
-      {(isDenoise || isFull) && (
+      {!compact && (isDenoise || isFull) && (
         <div className="strength-slider" onClick={(e) => e.stopPropagation()}>
           <div className="strength-header">
             <span className="strength-label">

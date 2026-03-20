@@ -28,6 +28,7 @@ function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
   const [zoomImage, setZoomImage] = useState(null);
+  const [detectionMode, setDetectionMode] = useState("gemini"); // 'gemini' | 'yolo'
   const toast = useToast();
 
   // Check backend health on mount
@@ -109,8 +110,8 @@ function App() {
         } else {
           const processingMessages = {
             denoise: `✨ Đang khử nhiễu ảnh (cường độ: ${strength})...`,
-            detect: "🤖 Đang nhận diện đối tượng bằng Gemini AI...",
-            full: "🚀 Đang khử nhiễu + nhận diện bằng AI...",
+            detect: "🤖 Đang nhận diện đối tượng...",
+            full: "🚀 Đang khử nhiễu + nhận diện...",
           };
           setLoadingMessage(processingMessages[mode]);
         }
@@ -119,7 +120,7 @@ function App() {
       if (mode === "denoise") {
         response = await api.denoiseImage(file, onProgress, strength);
       } else if (mode === "detect") {
-        response = await api.detectImage(file, onProgress);
+        response = await api.detectImage(file, onProgress, detectionMode);
       } else {
         response = await api.uploadImage(file, onProgress);
       }
@@ -259,7 +260,7 @@ function App() {
             >
               <span className="tab-icon">🔍</span>
               <span className="tab-label">Nhận diện</span>
-              <span className="tab-desc">Phân tích bằng Gemini AI</span>
+              <span className="tab-desc">Phân tích bằng YOLO + AI</span>
             </button>
             <button
               className={`tab-btn ${activeTab === "full" ? "active" : ""}`}
@@ -300,6 +301,92 @@ function App() {
             isLoading={isLoading}
             mode={activeTab}
           />
+
+          {/* Detection Mode Selector - Only for detect tab */}
+          {activeTab === "detect" && (
+            <div className="card fade-in" style={{ marginTop: "1.5rem" }}>
+              <h3 className="card-title">
+                <span>⚙️</span>
+                Chọn công cụ nhận diện
+              </h3>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "1rem",
+                  flexWrap: "wrap",
+                }}
+              >
+                <button
+                  className={`detection-mode-btn ${
+                    detectionMode === "gemini" ? "active" : ""
+                  }`}
+                  onClick={() => setDetectionMode("gemini")}
+                  style={{
+                    flex: "1",
+                    minWidth: "150px",
+                    padding: "1rem",
+                    borderRadius: "8px",
+                    border: "2px solid",
+                    borderColor:
+                      detectionMode === "gemini"
+                        ? "var(--primary)"
+                        : "rgba(59, 130, 246, 0.2)",
+                    background:
+                      detectionMode === "gemini"
+                        ? "rgba(59, 130, 246, 0.1)"
+                        : "transparent",
+                    color: "inherit",
+                    cursor: "pointer",
+                    fontWeight: detectionMode === "gemini" ? "600" : "500",
+                    transition: "all 200ms ease",
+                  }}
+                >
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>
+                    🤖
+                  </div>
+                  <div style={{ fontWeight: "600" }}>YOLO + AI</div>
+                  <div style={{ fontSize: "0.85rem", opacity: 0.7 }}>
+                    API-based, chi tiết
+                  </div>
+                </button>
+
+                <button
+                  className={`detection-mode-btn ${
+                    detectionMode === "yolo" ? "active" : ""
+                  }`}
+                  onClick={() => setDetectionMode("yolo")}
+                  style={{
+                    flex: "1",
+                    minWidth: "150px",
+                    padding: "1rem",
+                    borderRadius: "8px",
+                    border: "2px solid",
+                    borderColor:
+                      detectionMode === "yolo"
+                        ? "var(--primary)"
+                        : "rgba(59, 130, 246, 0.2)",
+                    background:
+                      detectionMode === "yolo"
+                        ? "rgba(59, 130, 246, 0.1)"
+                        : "transparent",
+                    color: "inherit",
+                    cursor: "pointer",
+                    fontWeight: detectionMode === "yolo" ? "600" : "500",
+                    transition: "all 200ms ease",
+                  }}
+                >
+                  <div style={{ fontSize: "1.5rem", marginBottom: "0.5rem" }}>
+                    ⚡
+                  </div>
+                  <div style={{ fontWeight: "600" }}>YOLO v5</div>
+                  <div style={{ fontSize: "0.85rem", opacity: 0.7 }}>
+                    Local model, nhanh
+                  </div>
+                </button>
+              </div>
+
+            </div>
+          )}
 
           {/* === DENOISE TAB RESULTS === */}
           {activeTab === "denoise" && denoiseResult && (
@@ -351,7 +438,7 @@ function App() {
                   >
                     <h3 className="card-title" style={{ margin: 0 }}>
                       <span>📝</span>
-                      Mô tả ảnh (Gemini AI)
+                      Mô tả ảnh Yolo5
                     </h3>
                     <button
                       className={`tts-button ${isSpeaking ? "speaking" : ""}`}
@@ -373,8 +460,30 @@ function App() {
                 </div>
               )}
 
+              {(!detectResult.detectedObjects || detectResult.detectedObjects.length === 0) && (
+                <div className="card fade-in mt-xl" style={{ 
+                  borderColor: "var(--warning)",
+                  background: "rgba(245, 158, 11, 0.1)" 
+                }}>
+                  <p style={{ 
+                    margin: 0, 
+                    display: "flex", 
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    color: "var(--warning-text)",
+                    fontWeight: "500"
+                  }}>
+                    <span>⚠️</span> 
+                    {detectionMode === "yolo" 
+                      ? "YOLO không phát hiện đối tượng nào trong ảnh. Hãy thử thay đổi ảnh hoặc dùng Gemini Vision để có kết quả chi tiết hơn."
+                      : "Không phát hiện đối tượng nào trong ảnh. Vui lòng thử ảnh khác."}
+                  </p>
+                </div>
+              )}
+
               <DetectionTags
                 tags={detectResult.detectedObjects}
+                yoloLabels={detectResult.yoloLabels}
                 processingTime={detectResult.processingTimeMs}
                 imageWidth={detectResult.imageWidth}
                 imageHeight={detectResult.imageHeight}
@@ -411,7 +520,7 @@ function App() {
                   >
                     <h3 className="card-title" style={{ margin: 0 }}>
                       <span>📝</span>
-                      Mô tả ảnh (Gemini AI)
+                      Mô tả ảnh (YOLO + AI)
                     </h3>
                     <button
                       className={`tts-button ${isSpeaking ? "speaking" : ""}`}
@@ -436,6 +545,7 @@ function App() {
               {/* Detection Tags */}
               <DetectionTags
                 tags={fullResult.detectedObjects}
+                yoloLabels={fullResult.yoloLabels}
                 processingTime={fullResult.processingTimeMs}
                 imageWidth={fullResult.imageWidth}
                 imageHeight={fullResult.imageHeight}
@@ -456,10 +566,10 @@ function App() {
       <footer className="footer">
         <p>
           Powered by <strong>Spring Boot</strong> +{" "}
-          <strong>Gemini Vision API</strong> + <strong>React</strong>
+          <strong>Yolo5 API</strong> + <strong>React</strong>
         </p>
         <p style={{ marginTop: "0.5rem" }}>
-          ✨ OpenCV Denoise • 🔍 Gemini AI (Nhận diện) • 🚀 Full Analysis
+          ✨ OpenCV Denoise • 🔍 Yolo5 AI (Nhận diện) • 🚀 Full Analysis
         </p>
       </footer>
     </div>

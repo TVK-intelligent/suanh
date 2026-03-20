@@ -97,11 +97,12 @@ const api = {
   },
 
   /**
-   * Chỉ nhận diện đối tượng (Gemini Vision)
+   * Chỉ nhận diện đối tượng (Gemini Vision hoặc YOLO)
    */
-  detectImage: async (file, onProgress) => {
+  detectImage: async (file, onProgress, mode = "gemini") => {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("mode", mode);
 
     const response = await axios.post(`${API_BASE_URL}/detect`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
