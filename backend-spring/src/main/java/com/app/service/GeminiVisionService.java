@@ -84,6 +84,7 @@ public class GeminiVisionService {
                                                             "data", base64Image))))),
                     "generationConfig", Map.of(
                             "temperature", 0.3,
+                            "responseMimeType", "application/json",
                             "maxOutputTokens", 1024));
 
             HttpHeaders headers = new HttpHeaders();
@@ -135,6 +136,17 @@ public class GeminiVisionService {
     private ImageAnalysisResult parseJsonResponse(String jsonText) {
         try {
             jsonText = jsonText.trim();
+            
+            // Xóa thẻ markdown code block nếu có
+            if (jsonText.startsWith("```json")) {
+                jsonText = jsonText.substring(7);
+            } else if (jsonText.startsWith("```")) {
+                jsonText = jsonText.substring(3);
+            }
+            if (jsonText.endsWith("```")) {
+                jsonText = jsonText.substring(0, jsonText.length() - 3);
+            }
+            
             int startIndex = jsonText.indexOf('{');
             int endIndex = jsonText.lastIndexOf('}');
             if (startIndex >= 0 && endIndex > startIndex) {
@@ -153,8 +165,14 @@ public class GeminiVisionService {
 
         } catch (Exception e) {
             logger.warn("Không thể parse JSON, sử dụng text gốc: {}", e.getMessage());
-            // Fallback: trả về text gốc làm description
-            return new ImageAnalysisResult(jsonText, Collections.emptyList());
+            // Fallback: cố gắng lấy trường description bằng regex nếu parse json lỗi
+            String fallbackText = jsonText.replaceAll("^```json\\s*", "").replaceAll("```$", "").trim();
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile("\"description\"\\s*:\\s*\"([^\"]+)\"");
+            java.util.regex.Matcher m = p.matcher(fallbackText);
+            if (m.find()) {
+                fallbackText = m.group(1);
+            }
+            return new ImageAnalysisResult(fallbackText, Collections.emptyList());
         }
     }
 

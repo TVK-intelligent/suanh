@@ -83,7 +83,7 @@ function DetectionTags({
     <div className="card fade-in mt-xl">
       <h3 className="card-title">
         <span>🤖</span>
-        Kết quả nhận diện AI
+        Kết quả nhận diện
       </h3>
 
       {/* Stats */}
@@ -154,7 +154,7 @@ function DetectionTags({
           opacity: 0.8,
         }}
       >
-        📋 Tất cả phát hiện (YOLO + Gemini):
+        📋 Tất cả phát hiện (YOLO V5):
       </h4>
       <div className="tags-container">
         {tags.map((tag, index) => (

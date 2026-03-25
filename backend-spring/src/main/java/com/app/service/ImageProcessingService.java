@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 /**
  * Service chính xử lý ảnh
@@ -368,21 +367,7 @@ public class ImageProcessingService {
             logger.info("✅ YOLO detection completed. Detected {} object(s): {}", yoloLabels.size(), yoloLabels);
 
             task.setDetectedObjects(objectMapper.writeValueAsString(yoloLabels));
-
-            // Tạo đoạn văn miêu tả chi tiết từ YOLO
-            String caption;
-            if (yoloLabels.isEmpty()) {
-                caption = "Hệ thống AI (YOLO v5) đã xử lý xong nhưng không nhận diện được đối tượng nào rõ ràng trong bức ảnh này.";
-            } else {
-                Map<String, Long> counts = yoloLabels.stream()
-                        .collect(Collectors.groupingBy(e -> e, Collectors.counting()));
-                String objectsStr = counts.entrySet().stream()
-                        .map(e -> e.getValue() + " " + e.getKey())
-                        .collect(Collectors.joining(", "));
-                caption = "Hệ thống AI (YOLO v5) đã phân tích bức ảnh và phát hiện thành công " + yoloLabels.size() + " đối tượng, bao gồm: " + objectsStr + ".";
-            }
-
-            task.setImageCaption(caption);
+            task.setImageCaption("YOLO v5 detection (local model, no cloud API)");
             task.setProcessingStatus(ProcessingStatus.COMPLETED);
             task.setProcessingTimeMs((int) (System.currentTimeMillis() - startTime));
             task = imageTaskRepository.save(task);
@@ -394,7 +379,7 @@ public class ImageProcessingService {
                     "/uploads/original/" + uniqueFilename,
                     null, yoloLabels, task.getProcessingTimeMs(),
                     task.getImageWidth(), task.getImageHeight());
-            response.setImageCaption(caption);
+            response.setImageCaption("Phát hiện bằng YOLO v5: " + String.join(", ", yoloLabels));
             response.setYoloLabels(yoloLabels);
             return response;
 
